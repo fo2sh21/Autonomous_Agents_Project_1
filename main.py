@@ -1,10 +1,10 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from reactive_agent import reactive_agent
-from routing_agent import routing_agent
-from constrained_react import constrained_react_agent
-from unconstrained_react import run_unconstrained_agent
+from reactive.reactive import reactive_agent
+from routing.Deterministic_routing import routing_agent
+from constrained_react.constrained_react import constrained_react_agent
+from unconstrained_react.unconstrained_llm import run_unconstrained_agent
 
 # Load API Key
 script_dir = Path(__file__).resolve().parent
