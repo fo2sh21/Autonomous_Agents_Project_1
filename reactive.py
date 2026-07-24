@@ -1,45 +1,29 @@
 def reactive_agent(user_message: str) -> str:
-   
+
     message = user_message.lower()
 
-    # Billing
-    if "refund" in message or "money back" in message or "charge" in message:
-        return "Billing Department"
+    if "vip" in message or "tier" in message or "status" in message:
+        return "check_guest_tier"
 
-    # Booking
-    elif "booking" in message or "reservation" in message or "check in" in message:
-        return "Front Desk"
+    elif "occupancy" in message or "available room" in message:
+        return "check_occupancy"
 
-    # Technical
     elif (
-        "wifi" in message
-        or "internet" in message
-        or "ac" in message
+        "ac" in message
         or "air conditioner" in message
-        or "tv" in message
+        or "broken" in message
+        or "maintenance" in message
+        or "shower" in message
     ):
-        return "Technical Maintenance"
+        return "dispatch_maintenance"
 
-    # Housekeeping
     elif (
-        "clean" in message
-        or "dirty" in message
-        or "towel" in message
-        or "soap" in message
-        or "bed" in message
+        "refund" in message
+        or "voucher" in message
+        or "compensation" in message
+        or "discount" in message
     ):
-        return "Housekeeping"
+        return "issue_compensation"
 
-    # Room Service
-    elif (
-        "food" in message
-        or "breakfast" in message
-        or "lunch" in message
-        or "dinner" in message
-        or "room service" in message
-    ):
-        return "Room Service"
-
-    # Default
     else:
-        return "Customer Service"
+        return "escalate"
