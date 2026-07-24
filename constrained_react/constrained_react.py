@@ -1,12 +1,14 @@
 import os
 import json
 import logging
-from typing import Literal, Optional
+from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 from tenacity import retry, stop_after_attempt, wait_fixed
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from tools import TOOL_MAP
 
@@ -29,7 +31,6 @@ ALLOWED_ACTIONS = [
     "escalate",
 ]
 
-
 class AgentStep(BaseModel):
     thought: str
     action: Literal[
@@ -41,53 +42,39 @@ class AgentStep(BaseModel):
         "escalate",
     ]
     action_input: dict
-    is_final: bool
 
 
-load_dotenv()
+script_dir = Path(__file__).resolve().parent
+env_path = script_dir.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 api_key = os.getenv("GEMINI_API_KEY")
 
 if not api_key:
-    raise ValueError(
-        "GEMINI_API_KEY not found. Please set it in the .env file."
-    )
+    raise ValueError("GEMINI_API_KEY not found. Please set it in the .env file.")
 
-genai.configure(api_key=api_key)
-
-model = genai.GenerativeModel("gemini-1.5-flash")
-
-generation_config = genai.types.GenerationConfig(
-    response_mime_type="application/json",
-    response_schema=AgentStep.model_json_schema(),
-)
+client = genai.Client(api_key=api_key)
 
 class CheckGuestTierInput(BaseModel):
     room_number: str
 
-
 class CheckOccupancyInput(BaseModel):
     pass
-
 
 class DispatchMaintenanceInput(BaseModel):
     room_number: str
     issue: str
 
-
 class IssueCompensationInput(BaseModel):
     room_number: str
     comp_type: str
 
-
 class EscalateInput(BaseModel):
-    reason: Optional[str] = None
-    message: Optional[str] = None
-
+    reason: str = "Unspecified reason"
+    message: str = "Escalated to a human supervisor."
 
 class FinalAnswerInput(BaseModel):
     message: str
-
 
 ACTION_INPUT_MODELS = {
     "check_guest_tier": CheckGuestTierInput,
@@ -163,13 +150,11 @@ Return ONLY valid JSON in this format:
 {{
     "thought": "...",
     "action": "...",
-    "action_input": {{}},
-    "is_final": true/false
+    "action_input": {{}}
 }}
 """
 
 def execute_action(action: str, action_input: dict) -> dict:
-
     model_cls = ACTION_INPUT_MODELS.get(action)
 
     if model_cls is None:
@@ -194,7 +179,6 @@ def execute_action(action: str, action_input: dict) -> dict:
             "message": validated.message
         }
 
-    # استخدام .get() الآمن بدلاً من المباشر للتأكد من وجود الدالة
     tool = TOOL_MAP.get(action)
     if tool is None:
         return {"error": f"Tool implementation for '{action}' was not found in TOOL_MAP."}
@@ -225,10 +209,8 @@ def execute_action(action: str, action_input: dict) -> dict:
         "result": result
     }
 
-
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(1))
 def generate_step(history: list[dict], user_message: str) -> AgentStep:
-
     history_text = "\n".join(
         f"- Thought: {h['thought']} | "
         f"Action: {h['action']} | "
@@ -247,30 +229,29 @@ Previous steps:
 {history_text if history else "No previous steps."}
 """
 
-    response = model.generate_content(
-        prompt,
-        generation_config=generation_config
+    response = client.models.generate_content(
+        model="gemini-3.1-flash-lite",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+        )
     )
 
     try:
         return AgentStep.model_validate_json(response.text)
-
     except ValidationError as e:
-        raise ValueError(
-            f"Model response does not match schema: {e}"
-        )
+        logger.warning(f"JSON Validation failed, retrying... Error: {e}")
+        raise ValueError(f"Model returned invalid JSON structure: {e}")
+
 
 def constrained_react_agent(user_message: str) -> str:
-
     history: list[dict] = []
     consecutive_errors_by_action: dict[str, int] = {}
 
     for step in range(MAX_STEPS):
-
         try:
             agent_step = generate_step(history, user_message)
-
-        except ValueError as e:
+        except Exception as e:
             logger.error("Validation failed after retries: %s", e)
             return "Request escalated due to a processing error."
 
@@ -311,7 +292,6 @@ def constrained_react_agent(user_message: str) -> str:
         )
 
         if isinstance(observation, dict) and "error" in observation:
-
             consecutive_errors_by_action[agent_step.action] = (
                 consecutive_errors_by_action.get(
                     agent_step.action,
@@ -324,54 +304,35 @@ def constrained_react_agent(user_message: str) -> str:
                 consecutive_errors_by_action[agent_step.action]
                 >= MAX_CONSECUTIVE_ERRORS_PER_ACTION
             ):
-
                 logger.warning(
                     "Action '%s' failed repeatedly.",
                     agent_step.action,
                 )
-
                 return (
                     f"Escalated because '{agent_step.action}' "
                     f"failed repeatedly."
                 )
-
         else:
             consecutive_errors_by_action[
                 agent_step.action
             ] = 0
 
-        if agent_step.action == "escalate":
-            return agent_step.action_input.get(
-                "message",
-                "Request escalated to a human supervisor.",
-            )
-
-        if agent_step.is_final or agent_step.action == "final_answer":
-            final_msg = agent_step.action_input.get("message")
-            if not final_msg and isinstance(observation, dict):
-                final_msg = observation.get("message")
-            return final_msg or "Request completed."
+        if agent_step.action in ["final_answer", "escalate"]:
+            if agent_step.action == "escalate":
+                return agent_step.action_input.get("message", "Escalated to human supervisor.")
+            return agent_step.action_input.get("message", "Request completed.")
 
     return "Request escalated because MAX_STEPS was exceeded."
 
 if __name__ == "__main__":
-
     test_messages = [
-
         "Room 402 has no air conditioning.",
-
         "Room 310 has a broken shower. Please send maintenance.",
-
         "Guest in room 105 is unhappy and deserves compensation.",
-
         "Can you check hotel occupancy?",
-
     ]
 
     for msg in test_messages:
-
         print("Guest:", msg)
-
         result = constrained_react_agent(msg)
-
         print("Final Result:", result)
