@@ -3,7 +3,6 @@ import json
 import logging
 from pathlib import Path
 from typing import Literal
-
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 from tenacity import retry, stop_after_attempt, wait_fixed

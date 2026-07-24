@@ -1,4 +1,4 @@
-# agent.py
+
 import re
 import os
 from google import genai
@@ -57,7 +57,6 @@ def run_unconstrained_agent(user_issue: str, api_key: str) -> str:
         print(model_output)
         prompt += model_output + "\n"
 
-        # Check for completion
         if "Final Answer:" in model_output:
             return model_output.split("Final Answer:")[1].strip()
 
@@ -80,7 +79,6 @@ def run_unconstrained_agent(user_issue: str, api_key: str) -> str:
 if __name__ == "__main__":
 
     test_case = "Room 402 AC is leaking heavily and making loud noises."
-    #needed to get .env file if placed in project root directory
     script_dir = Path(__file__).resolve().parent
     env_path = script_dir.parent / ".env"
     load_dotenv(dotenv_path=env_path)
