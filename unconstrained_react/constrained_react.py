@@ -57,7 +57,6 @@ genai.configure(api_key=api_key)
 
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-# تعديل لضمان توافق الـ Schema مع جميع نسخ المكتبة
 generation_config = genai.types.GenerationConfig(
     response_mime_type="application/json",
     response_schema=AgentStep.model_json_schema(),
@@ -105,38 +104,47 @@ You are a hotel customer service agent.
 Your task is to decide the next action based on the guest's message
 and the observations from previous tool calls.
 
-Allowed actions:
-{ALLOWED_ACTIONS}
-
-Each action requires the following action_input:
+Allowed actions and their descriptions:
 
 - check_guest_tier:
+    Description: Returns the guest's VIP status for a room.
+    Input format:
     {{
         "room_number": "<room number>"
     }}
 
 - check_occupancy:
+    Description: Returns hotel occupancy and available rooms.
+    Input format:
     {{}}
 
 - dispatch_maintenance:
+    Description: Creates a maintenance ticket.
+    Input format:
     {{
         "room_number": "<room number>",
         "issue": "<short issue>"
     }}
 
 - issue_compensation:
+    Description: Applies a compensation voucher.
+    Input format:
     {{
         "room_number": "<room number>",
         "comp_type": "<voucher / discount / upgrade>"
     }}
 
 - escalate:
+    Description: Escalates the issue to a human supervisor when unable to resolve.
+    Input format:
     {{
         "reason": "<reason>",
         "message": "<optional message>"
     }}
 
 - final_answer:
+    Description: Completes the request with a final response message for the guest.
+    Input format:
     {{
         "message": "<final response>"
     }}
@@ -186,7 +194,10 @@ def execute_action(action: str, action_input: dict) -> dict:
             "message": validated.message
         }
 
-    tool = TOOL_MAP[action]
+    # استخدام .get() الآمن بدلاً من المباشر للتأكد من وجود الدالة
+    tool = TOOL_MAP.get(action)
+    if tool is None:
+        return {"error": f"Tool implementation for '{action}' was not found in TOOL_MAP."}
 
     if action == "check_guest_tier":
         result = tool(validated.room_number)
@@ -335,7 +346,6 @@ def constrained_react_agent(user_message: str) -> str:
                 "Request escalated to a human supervisor.",
             )
 
-        # الخروج لو is_final صريحة OR لو اختار final_answer
         if agent_step.is_final or agent_step.action == "final_answer":
             final_msg = agent_step.action_input.get("message")
             if not final_msg and isinstance(observation, dict):
@@ -364,4 +374,4 @@ if __name__ == "__main__":
 
         result = constrained_react_agent(msg)
 
-        print("Final Result:", result
+        print("Final Result:", result)
