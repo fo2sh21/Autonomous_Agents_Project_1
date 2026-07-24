@@ -57,9 +57,10 @@ genai.configure(api_key=api_key)
 
 model = genai.GenerativeModel("gemini-1.5-flash")
 
+# تعديل لضمان توافق الـ Schema مع جميع نسخ المكتبة
 generation_config = genai.types.GenerationConfig(
     response_mime_type="application/json",
-    response_schema=AgentStep,
+    response_schema=AgentStep.model_json_schema(),
 )
 
 class CheckGuestTierInput(BaseModel):
@@ -172,7 +173,6 @@ def execute_action(action: str, action_input: dict) -> dict:
         logger.warning("Invalid action_input for '%s': %s", action, e)
         return {"error": f"Invalid input: {e}"}
 
-    # These actions don't call external tools
     if action == "final_answer":
         return {
             "status": "completed",
@@ -335,14 +335,12 @@ def constrained_react_agent(user_message: str) -> str:
                 "Request escalated to a human supervisor.",
             )
 
-        if agent_step.is_final:
-            return agent_step.action_input.get(
-                "message",
-                json.dumps(
-                    observation,
-                    ensure_ascii=False,
-                ),
-            )
+        # الخروج لو is_final صريحة OR لو اختار final_answer
+        if agent_step.is_final or agent_step.action == "final_answer":
+            final_msg = agent_step.action_input.get("message")
+            if not final_msg and isinstance(observation, dict):
+                final_msg = observation.get("message")
+            return final_msg or "Request completed."
 
     return "Request escalated because MAX_STEPS was exceeded."
 
@@ -362,9 +360,8 @@ if __name__ == "__main__":
 
     for msg in test_messages:
 
-        print("\n" + "=" * 60)
         print("Guest:", msg)
 
         result = constrained_react_agent(msg)
 
-        print("Final Result:", result)
+        print("Final Result:", result
